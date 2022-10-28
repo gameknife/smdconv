@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -71,28 +72,30 @@ namespace smdconv
                 return;
             }
 
-            String DstMeshFile = Path.GetFileNameWithoutExtension(SrcMeshFileRoot);
-            DstMeshFile = DstMeshFile + ".smd";
-
-            DstMeshFile = Path.Join(Path.GetDirectoryName(SrcMeshFileRoot), DstMeshFile);
-            Console.WriteLine("Converting {0} -> {1}", SrcMeshFileRoot, DstMeshFile);
 
 
-            List<string> existToken = new List<string>();
+            Dictionary<string, int> existToken = new Dictionary<string, int>();
             Dictionary<string, string> existMaterialToken = new Dictionary<string, string>();
 
 
             int materialCount = 0;
             int meshCount = 0;
+
+            List<Vector3> instanceList = new List<Vector3>();
             
-            
-            
+            List<KeyValuePair<Vector3,int>> realInstanceList = new List<KeyValuePair<Vector3,int>>();
+
             // instance transform file ( submesh id -> transform )
             
             // material texture file
             
             
             // basic smd file
+            String DstMeshFile = Path.GetFileNameWithoutExtension(SrcMeshFileRoot);
+            DstMeshFile = DstMeshFile + ".smd";
+
+            DstMeshFile = Path.Join(Path.GetDirectoryName(SrcMeshFileRoot), DstMeshFile);
+            Console.WriteLine("Converting {0} -> {1}", SrcMeshFileRoot, DstMeshFile);
 
             File.Delete(DstMeshFile);
             var outFileStream = File.OpenWrite(DstMeshFile);
@@ -162,17 +165,19 @@ namespace smdconv
                     line = streamReader.ReadLine();
                     int VertexCount = Int32.Parse(line);
 
-                    string[] Vertice = new string[VertexCount];
-                    string[] Normals = new string[VertexCount];
-                    string[] TexCoord0 = new string[VertexCount];
+                    Vector3[] Vertice = new Vector3[VertexCount];
+                    Vector3[] Normals = new Vector3[VertexCount];
+                    Vector2[] TexCoord0 = new Vector2[VertexCount];
 
                     for (int v = 0; v < VertexCount; ++v)
                     {
                         line = streamReader.ReadLine();
-                        Vertice[v] = line;
+                        var v3 = line.Split(' ');
+                        Vertice[v] = new Vector3( float.Parse(v3[0]), float.Parse(v3[1]), float.Parse(v3[2]) );
                         
                         line = streamReader.ReadLine();
-                        Normals[v] = line;   
+                        v3 = line.Split(' ');
+                        Normals[v] = new Vector3( float.Parse(v3[0]), float.Parse(v3[1]), float.Parse(v3[2]) );
                         
                         line = streamReader.ReadLine();
                         if(TexcoordCount > 0)
@@ -182,13 +187,14 @@ namespace smdconv
                                 line = streamReader.ReadLine();
                                 if (tc == 0)
                                 {
-                                    TexCoord0[v] = line;
+                                    var v2 = line.Split(' ');
+                                    TexCoord0[v] = new Vector2( float.Parse(v2[0]), float.Parse(v2[1]));
                                 }
                             }
                         }
                         else
                         {
-                            TexCoord0[v] = "0.0 0.0";
+                            TexCoord0[v] = Vector2.Zero;
                         }
                     }
                     
@@ -202,13 +208,15 @@ namespace smdconv
                     
                     if (SkipInstance)
                     {
-                        if (existToken.Contains(token))
+                        if (existToken.ContainsKey(token))
                         {
                             writeSubmesh = false;
+                            realInstanceList.Add( new KeyValuePair<Vector3, int>( Vertice[0] , existToken[token]) );
                         }
                         else
                         {
-                            existToken.Add(token);
+                            var currIdx = existToken.Count;
+                            existToken.Add(token, currIdx);
                         }
                     }
 
@@ -225,6 +233,17 @@ namespace smdconv
                     // M = M2 * invM1
                     
                     // tri1，先将他归还到原点
+
+                    if (writeSubmesh)
+                    {
+                        var position = Vertice[0];
+                        for (int v = 0; v < Vertice.Length; ++v)
+                        {
+                            Vertice[v] -= position;
+                        }
+                        instanceList.Add(position);
+                    }
+
                     for (int t = 0; t < TriCount; ++t)
                     {
                         line = streamReader.ReadLine();
@@ -232,15 +251,32 @@ namespace smdconv
                         if (writeSubmesh)
                         {
                             var triIdx = line.Split(' ');
-
+                            
                             streamWriter.WriteLine(materialName);
 
-                            streamWriter.WriteLine(String.Format("0  {0}  {1}  {2}", Vertice[Int32.Parse(triIdx[0])],
-                                Normals[Int32.Parse(triIdx[0])], TexCoord0[Int32.Parse(triIdx[0])]));
-                            streamWriter.WriteLine(String.Format("0  {0}  {1}  {2}", Vertice[Int32.Parse(triIdx[2])],
-                                Normals[Int32.Parse(triIdx[2])], TexCoord0[Int32.Parse(triIdx[2])]));
-                            streamWriter.WriteLine(String.Format("0  {0}  {1}  {2}", Vertice[Int32.Parse(triIdx[1])],
-                                Normals[Int32.Parse(triIdx[1])], TexCoord0[Int32.Parse(triIdx[1])]));
+                            {
+                                var v1 = Vertice[Int32.Parse(triIdx[0])];
+                                var n1 = Normals[Int32.Parse(triIdx[0])];
+                                var t1 = TexCoord0[Int32.Parse(triIdx[0])];
+                                streamWriter.WriteLine(String.Format("0  {0} {1} {2}  {3} {4} {5}  {6} {7}", v1.X, v1.Y,
+                                    v1.Z, n1.X, n1.Y, n1.Z, t1.X, t1.Y));
+                            }
+
+                            {
+                                var v1 = Vertice[Int32.Parse(triIdx[2])];
+                                var n1 = Normals[Int32.Parse(triIdx[2])];
+                                var t1 = TexCoord0[Int32.Parse(triIdx[2])];
+                                streamWriter.WriteLine(String.Format("0  {0} {1} {2}  {3} {4} {5}  {6} {7}", v1.X, v1.Y,
+                                    v1.Z, n1.X, n1.Y, n1.Z, t1.X, t1.Y));
+                            }
+                            
+                            {
+                                var v1 = Vertice[Int32.Parse(triIdx[1])];
+                                var n1 = Normals[Int32.Parse(triIdx[1])];
+                                var t1 = TexCoord0[Int32.Parse(triIdx[1])];
+                                streamWriter.WriteLine(String.Format("0  {0} {1} {2}  {3} {4} {5}  {6} {7}", v1.X, v1.Y,
+                                    v1.Z, n1.X, n1.Y, n1.Z, t1.X, t1.Y));
+                            }
                         }
                     }
                     
@@ -255,8 +291,82 @@ namespace smdconv
             streamWriter.Flush();
             streamWriter.Close();
             outFileStream.Close();
+
+            {
+                string DstInstanceFile = Path.GetFileNameWithoutExtension(SrcMeshFileRoot) + ".smd.level";
+                DstInstanceFile = Path.Join(Path.GetDirectoryName(SrcMeshFileRoot), DstInstanceFile);
+
+                File.Delete(DstInstanceFile);
+                outFileStream = File.OpenWrite(DstInstanceFile);
+                streamWriter = new StreamWriter(outFileStream, Encoding.UTF8);
             
-            Console.WriteLine("[Mesh Statistic] Tri: {0}, Total Submesh: {1}, Individual: {2} Material: {3}", statistic.triCount, meshCount, statistic.meshCount, materialCount);
+                streamWriter.WriteLine("SMD level transforms");
+                // write instance transform
+                for (int i = 0; i < instanceList.Count; i++)
+                {
+                    streamWriter.WriteLine(String.Format("{0} {1} {2}", instanceList[i].X, instanceList[i].Y, instanceList[i].Z));
+                }
+            
+                streamWriter.Flush();
+                streamWriter.Close();
+                outFileStream.Close();
+            }
+
+            // paster for unreal engine 5
+            {
+                string DstInstanceFile = Path.GetFileNameWithoutExtension(SrcMeshFileRoot) + ".smd.uelevel";
+                DstInstanceFile = Path.Join(Path.GetDirectoryName(SrcMeshFileRoot), DstInstanceFile);
+
+                File.Delete(DstInstanceFile);
+                outFileStream = File.OpenWrite(DstInstanceFile);
+                streamWriter = new StreamWriter(outFileStream, Encoding.UTF8);
+            
+                streamWriter.WriteLine("Begin Map");
+                streamWriter.WriteLine("Begin Level");
+                // write instance transform
+                for (int i = 0; i < instanceList.Count; i++)
+                {
+                    streamWriter.WriteLine(String.Format("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{0} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'",i));
+                    streamWriter.WriteLine("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'");
+                    streamWriter.WriteLine("         End Object");
+                    streamWriter.WriteLine("         Begin Object Name=\"StaticMeshComponent0\"");
+                    streamWriter.WriteLine(String.Format("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{0}.ope-entrance-meadow-sun_0_{0}\"'",i));
+                    streamWriter.WriteLine("            StaticMeshImportVersion=1");
+                    streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",instanceList[i].X*100,instanceList[i].Z*100,instanceList[i].Y*100));
+                    streamWriter.WriteLine("         End Object");
+                    streamWriter.WriteLine("         StaticMeshComponent=\"StaticMeshComponent0\"");
+                    streamWriter.WriteLine("         RootComponent=\"StaticMeshComponent0\"");
+                    streamWriter.WriteLine(String.Format("         ActorLabel=\"ope-entrance-meadow-sun_{0}\"", i));
+                    streamWriter.WriteLine("      End Actor");
+                }
+                
+                for (int i = 0; i < realInstanceList.Count; i++)
+                {
+                    streamWriter.WriteLine(String.Format("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{0} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'",i + instanceList.Count));
+                    streamWriter.WriteLine("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'");
+                    streamWriter.WriteLine("         End Object");
+                    streamWriter.WriteLine("         Begin Object Name=\"StaticMeshComponent0\"");
+                    streamWriter.WriteLine(String.Format("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{0}.ope-entrance-meadow-sun_0_{0}\"'",realInstanceList[i].Value));
+                    streamWriter.WriteLine("            StaticMeshImportVersion=1");
+                    streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",realInstanceList[i].Key.X*100,realInstanceList[i].Key.Z*100,realInstanceList[i].Key.Y*100));
+                    streamWriter.WriteLine("         End Object");
+                    streamWriter.WriteLine("         StaticMeshComponent=\"StaticMeshComponent0\"");
+                    streamWriter.WriteLine("         RootComponent=\"StaticMeshComponent0\"");
+                    streamWriter.WriteLine(String.Format("         ActorLabel=\"ope-entrance-meadow-sun_{0}\"", i + instanceList.Count));
+                    streamWriter.WriteLine("      End Actor");
+                }
+                
+                
+                streamWriter.WriteLine("Begin Surface");
+                streamWriter.WriteLine("End Surface");
+                streamWriter.WriteLine("End Map");
+
+                streamWriter.Flush();
+                streamWriter.Close();
+                outFileStream.Close();
+            }
+            
+            Console.WriteLine("[Mesh Statistic] Tri: {0}, Total Submesh: {1}, Individual: {2} Material: {3}", statistic.triCount, meshCount, instanceList.Count, materialCount);
         }
     }
 }
