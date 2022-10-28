@@ -10,6 +10,31 @@ using System.Text;
 
 namespace smdconv
 {
+    public static class QuatExtensions
+    {
+        public static Vector3 ToEulerAngles(this Quaternion q)
+        {
+            Vector3 ret;
+            
+            // from ue
+            float SingularityTest = q.Z * q.X - q.W * q.Y;
+            float YawY = 2.0f * (q.W * q.Z + q.X * q.Y);
+            float YawX = (1.0f - 2.0f * (q.Y * q.Y + q.Z * q.Z));
+            float RAD_TO_DEG = (float)(180 / Math.PI);
+            
+            ret.X = (float)(Math.Asin(2.0f * SingularityTest) * RAD_TO_DEG); // Pitch
+            ret.Y = (float)(Math.Atan2(YawY, YawX) * RAD_TO_DEG);  // Yaw
+            ret.Z = (float)(Math.Atan2(-2.0f * (q.W*q.X + q.Y*q.Z), (1.0f - 2.0f * (q.X * q.X + q.Y*q.Y))) * RAD_TO_DEG);       //Roll
+
+            // ret.Y =   (float)((180 / Math.PI) * Math.Atan2(2f * q.X * q.W + 2f * q.Y * q.Z, 1 - 2f * (q.Z*q.Z  + q.W * q.W)));     // Yaw 
+            // ret.X = (float)((180 / Math.PI) * Math.Asin(2f * ( q.X * q.Z - q.W * q.Y ) ));                             // Pitch 
+            // ret.Z = (float)((180 / Math.PI) * Math.Atan2(2f * q.X * q.Y + 2f * q.Z * q.W, 1 - 2f * (q.Y * q.Y + q.Z * q.Z)));      // Roll 
+            return ret;
+        }
+    }
+    
+   
+    
     struct MeshStatic
     {
         public int triCount;
@@ -81,9 +106,11 @@ namespace smdconv
             int materialCount = 0;
             int meshCount = 0;
 
-            List<Vector3> instanceList = new List<Vector3>();
-            
-            List<KeyValuePair<Vector3,int>> realInstanceList = new List<KeyValuePair<Vector3,int>>();
+            List<Vector3> instanceLocationList = new List<Vector3>();
+            List<Quaternion> instanceRotationList = new List<Quaternion>();
+
+            List<KeyValuePair<int, KeyValuePair<Vector3, Quaternion>>> realInstanceList =
+                new List<KeyValuePair<int, KeyValuePair<Vector3, Quaternion>>>();
 
             // instance transform file ( submesh id -> transform )
             
@@ -206,12 +233,45 @@ namespace smdconv
 
                     bool writeSubmesh = true;
                     
+                    // 用第一个三角面，来恢复transform，做法：
+                    // tri1，以第一个顶点为origin，构造一个齐次坐标系M1
+                    // tri2，以第一个顶点为origin，构造一个齐次坐标系M2
+                    // M = M2 * invM1
+                    
+                    // tri1，先将他归还到原点
+                    var ref1_1 = Vertice[0];
+                    var ref1_2 = Vertice[1];
+                    var ref1_3 = Vertice[2];
+
+                    var side1 = Vector3.Normalize(ref1_2 - ref1_1);
+                    var side2 = Vector3.Normalize(ref1_3 - ref1_1);
+
+                    var up = Vector3.Cross(side1, side2);
+                    var front = Vector3.Cross(up, side1);
+
+                    up = new Vector3(0, 1, 0);
+                    front = new Vector3(0, 0, -1);
+                    //Quaternion rotation = Quaternion.ax
+
+                    Matrix4x4 worldMat = Matrix4x4.CreateWorld(ref1_1, front, up);
+                    Matrix4x4 worldMatInv;
+                    Matrix4x4.Invert(worldMat, out worldMatInv);
+
+                    var translation = new Vector3();
+                    var rotation = new Quaternion();
+                    var scale = new Vector3();
+
+                    Matrix4x4.Decompose(worldMat, out scale, out rotation, out translation);
+                    // Console.WriteLine("Translation: {0}",translation);
+                    // Console.WriteLine("Rotation: {0}", rotation.ToEulerAngles());
+                    // Console.WriteLine("Scale: {0}", scale);
+                    
                     if (SkipInstance)
                     {
                         if (existToken.ContainsKey(token))
                         {
                             writeSubmesh = false;
-                            realInstanceList.Add( new KeyValuePair<Vector3, int>( Vertice[0] , existToken[token]) );
+                            realInstanceList.Add( new KeyValuePair<int, KeyValuePair<Vector3, Quaternion>>( existToken[token], new KeyValuePair<Vector3, Quaternion>(translation, rotation)) );
                         }
                         else
                         {
@@ -226,22 +286,16 @@ namespace smdconv
                         statistic.triCount += TriCount;
                         statistic.meshCount++;
                     }
-                    
-                    // 用第一个三角面，来恢复transform，做法：
-                    // tri1，以第一个顶点为origin，构造一个齐次坐标系M1
-                    // tri2，以第一个顶点为origin，构造一个齐次坐标系M2
-                    // M = M2 * invM1
-                    
-                    // tri1，先将他归还到原点
 
                     if (writeSubmesh)
                     {
-                        var position = Vertice[0];
                         for (int v = 0; v < Vertice.Length; ++v)
                         {
-                            Vertice[v] -= position;
+                            Vertice[v] = Vector3.Transform(Vertice[v], worldMatInv);
+                            Normals[v] = Vector3.TransformNormal(Normals[v], worldMatInv);
                         }
-                        instanceList.Add(position);
+                        instanceLocationList.Add(translation);
+                        instanceRotationList.Add(rotation);
                     }
 
                     for (int t = 0; t < TriCount; ++t)
@@ -302,9 +356,9 @@ namespace smdconv
             
                 streamWriter.WriteLine("SMD level transforms");
                 // write instance transform
-                for (int i = 0; i < instanceList.Count; i++)
+                for (int i = 0; i < instanceLocationList.Count; i++)
                 {
-                    streamWriter.WriteLine(String.Format("{0} {1} {2}", instanceList[i].X, instanceList[i].Y, instanceList[i].Z));
+                    streamWriter.WriteLine(String.Format("{0} {1} {2} {3} {4} {5} {6}", instanceLocationList[i].X, instanceLocationList[i].Y, instanceLocationList[i].Z, instanceRotationList[i].X, instanceRotationList[i].Y, instanceRotationList[i].Z, instanceRotationList[i].W));
                 }
             
                 streamWriter.Flush();
@@ -324,7 +378,7 @@ namespace smdconv
                 streamWriter.WriteLine("Begin Map");
                 streamWriter.WriteLine("Begin Level");
                 // write instance transform
-                for (int i = 0; i < instanceList.Count; i++)
+                for (int i = 0; i < instanceLocationList.Count; i++)
                 {
                     streamWriter.WriteLine(String.Format("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{0} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'",i));
                     streamWriter.WriteLine("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'");
@@ -332,7 +386,9 @@ namespace smdconv
                     streamWriter.WriteLine("         Begin Object Name=\"StaticMeshComponent0\"");
                     streamWriter.WriteLine(String.Format("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{0}.ope-entrance-meadow-sun_0_{0}\"'",i));
                     streamWriter.WriteLine("            StaticMeshImportVersion=1");
-                    streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",instanceList[i].X*100,instanceList[i].Z*100,instanceList[i].Y*100));
+                    streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",instanceLocationList[i].X*100,instanceLocationList[i].Y*100,instanceLocationList[i].Z*100));
+                    var euler = instanceRotationList[i].ToEulerAngles();
+                    streamWriter.WriteLine(String.Format("            RelativeRotation=(Pitch={0},Yaw={1},Roll={2})",euler.X,euler.Y,euler.Z));
                     streamWriter.WriteLine("         End Object");
                     streamWriter.WriteLine("         StaticMeshComponent=\"StaticMeshComponent0\"");
                     streamWriter.WriteLine("         RootComponent=\"StaticMeshComponent0\"");
@@ -340,21 +396,21 @@ namespace smdconv
                     streamWriter.WriteLine("      End Actor");
                 }
                 
-                for (int i = 0; i < realInstanceList.Count; i++)
-                {
-                    streamWriter.WriteLine(String.Format("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{0} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'",i + instanceList.Count));
-                    streamWriter.WriteLine("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'");
-                    streamWriter.WriteLine("         End Object");
-                    streamWriter.WriteLine("         Begin Object Name=\"StaticMeshComponent0\"");
-                    streamWriter.WriteLine(String.Format("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{0}.ope-entrance-meadow-sun_0_{0}\"'",realInstanceList[i].Value));
-                    streamWriter.WriteLine("            StaticMeshImportVersion=1");
-                    streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",realInstanceList[i].Key.X*100,realInstanceList[i].Key.Z*100,realInstanceList[i].Key.Y*100));
-                    streamWriter.WriteLine("         End Object");
-                    streamWriter.WriteLine("         StaticMeshComponent=\"StaticMeshComponent0\"");
-                    streamWriter.WriteLine("         RootComponent=\"StaticMeshComponent0\"");
-                    streamWriter.WriteLine(String.Format("         ActorLabel=\"ope-entrance-meadow-sun_{0}\"", i + instanceList.Count));
-                    streamWriter.WriteLine("      End Actor");
-                }
+                // for (int i = 0; i < realInstanceList.Count; i++)
+                // {
+                //     streamWriter.WriteLine(String.Format("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{0} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'",i + instanceLocationList.Count));
+                //     streamWriter.WriteLine("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'");
+                //     streamWriter.WriteLine("         End Object");
+                //     streamWriter.WriteLine("         Begin Object Name=\"StaticMeshComponent0\"");
+                //     streamWriter.WriteLine(String.Format("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{0}.ope-entrance-meadow-sun_0_{0}\"'",realInstanceList[i].Value));
+                //     streamWriter.WriteLine("            StaticMeshImportVersion=1");
+                //     streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",realInstanceList[i].Key.X*100,realInstanceList[i].Key.Z*100,realInstanceList[i].Key.Y*100));
+                //     streamWriter.WriteLine("         End Object");
+                //     streamWriter.WriteLine("         StaticMeshComponent=\"StaticMeshComponent0\"");
+                //     streamWriter.WriteLine("         RootComponent=\"StaticMeshComponent0\"");
+                //     streamWriter.WriteLine(String.Format("         ActorLabel=\"ope-entrance-meadow-sun_{0}\"", i + instanceLocationList.Count));
+                //     streamWriter.WriteLine("      End Actor");
+                // }
                 
                 
                 streamWriter.WriteLine("Begin Surface");
@@ -366,7 +422,7 @@ namespace smdconv
                 outFileStream.Close();
             }
             
-            Console.WriteLine("[Mesh Statistic] Tri: {0}, Total Submesh: {1}, Individual: {2} Material: {3}", statistic.triCount, meshCount, instanceList.Count, materialCount);
+            Console.WriteLine("[Mesh Statistic] Tri: {0}, Total Submesh: {1}, Individual: {2} Material: {3}", statistic.triCount, meshCount, instanceLocationList.Count, materialCount);
         }
     }
 }

@@ -33,6 +33,7 @@ bl_info = {
 import bpy
 import os
 
+from mathutils import Matrix, Vector, Euler, Quaternion
 from bpy_extras.io_utils import ExportHelper
 
 from bpy.props import (BoolProperty,
@@ -118,7 +119,8 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
 
         for item in obj_export_list:
             item.select_set(True)
-            item.location = Vec
+            item.location = Vector([0,0,0])
+            item.rotation_quaternion = Vector([1,0,0,0])
             if item.type == 'MESH':
                 file_path = os.path.join(folder_path, "{}.fbx".format(item.name))
 
