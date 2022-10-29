@@ -8,27 +8,149 @@ using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 
+
+    
 namespace smdconv
 {
     public static class QuatExtensions
     {
+        const float FLT_EPSILON = 1.192092896e-07F;
+        const double M_SQRT2 = 1.41421356237309504880;
+        public static double hypotf(float x, float y)
+        {
+            double p, qp;
+            p = Math.Max(x,y);
+            if(p==0) return 0;
+            qp = Math.Min(y,x) / p;    
+            return p * Math.Sqrt(1.0 + qp*qp);
+        }
+            
+        static void quat_to_mat3_no_error(Quaternion q, out Matrix4x4 m )
+        {
+            double q0, q1, q2, q3, qda, qdb, qdc, qaa, qab, qac, qbb, qbc, qcc;
+
+            q0 = M_SQRT2 * (double)q.W;
+            q1 = M_SQRT2 * (double)q.X;
+            q2 = M_SQRT2 * (double)q.Y;
+            q3 = M_SQRT2 * (double)q.Z;
+
+            qda = q0 * q1;
+            qdb = q0 * q2;
+            qdc = q0 * q3;
+            qaa = q1 * q1;
+            qab = q1 * q2;
+            qac = q1 * q3;
+            qbb = q2 * q2;
+            qbc = q2 * q3;
+            qcc = q3 * q3;
+
+            m.M11 = (float)(1.0 - qbb - qcc);
+            m.M12 = (float)(qdc + qab);
+            m.M13 = (float)(-qdb + qac);
+            m.M14 = 0.0f;
+
+            m.M21 = (float)(-qdc + qab);
+            m.M22 = (float)(1.0 - qaa - qcc);
+            m.M23 = (float)(qda + qbc);
+            m.M24 = 0.0f;
+
+            m.M31 = (float)(qdb + qac);
+            m.M32 = (float)(-qda + qbc);
+            m.M33 = (float)(1.0 - qaa - qbb);
+            m.M34 = 0.0f;
+            
+            m.M41 = 0.0f;
+            m.M42 = 0.0f;
+            m.M43 = 0.0f;
+            m.M44 = 1.0f;
+        }
+        
+        public static void MatrixDecomposeYawPitchRoll(
+        Matrix4x4 mat,
+        out Vector3 euler)
+        {
+            double cy = hypotf(mat.M11, mat.M12);
+            const float RAD_TO_DEG = (float)(180 / Math.PI);
+            
+            // from Blender, final correct
+            if (cy > 16.0f * FLT_EPSILON)
+            {
+                var euler1 = new Vector3();
+                {
+                    euler1.X = (float) Math.Atan2(mat.M23, mat.M33);
+                    euler1.Y = (float) Math.Atan2(-mat.M13, cy);
+                    euler1.Z = (float) Math.Atan2(mat.M12, mat.M11);
+                }
+                var euler2 = new Vector3();
+                {
+                    euler2.X = (float)Math.Atan2(-mat.M23, -mat.M33);
+                    euler2.Y = (float)Math.Atan2(-mat.M13, -cy);
+                    euler2.Z = (float)Math.Atan2(-mat.M12, -mat.M11);
+                }
+
+                if (Math.Abs(euler1.X) + Math.Abs(euler1.Y) + Math.Abs(euler1.Z) >
+                    Math.Abs(euler2.X) + Math.Abs(euler2.Y) + Math.Abs(euler2.Z))
+                {
+                    euler = euler2;
+                }
+                else
+                {
+                    euler = euler1;
+                }     
+            }
+            else
+            {
+                euler.X = (float)Math.Atan2(-mat.M32, mat.M22);
+                euler.Y = (float)Math.Atan2(-mat.M13, cy);
+                euler.Z = 0;
+            }
+ 
+            
+            euler.X *= RAD_TO_DEG;
+            euler.Y *= RAD_TO_DEG;
+            euler.Z *= RAD_TO_DEG;
+        }
+        
         public static Vector3 ToEulerAngles(this Quaternion q)
         {
             Vector3 ret;
-            
+
+            var rotMat = new Matrix4x4();
+            quat_to_mat3_no_error( Quaternion.Normalize(q), out rotMat );
+
+            // Matrix4x4.
+
+            //q = Quaternion.Normalize(q);
+            MatrixDecomposeYawPitchRoll(rotMat, out ret);
+   
             // from ue
-            float SingularityTest = q.Z * q.X - q.W * q.Y;
-            float YawY = 2.0f * (q.W * q.Z + q.X * q.Y);
-            float YawX = (1.0f - 2.0f * (q.Y * q.Y + q.Z * q.Z));
-            float RAD_TO_DEG = (float)(180 / Math.PI);
-            
-            ret.X = (float)(Math.Asin(2.0f * SingularityTest) * RAD_TO_DEG); // Pitch
-            ret.Y = (float)(Math.Atan2(YawY, YawX) * RAD_TO_DEG);  // Yaw
-            ret.Z = (float)(Math.Atan2(-2.0f * (q.W*q.X + q.Y*q.Z), (1.0f - 2.0f * (q.X * q.X + q.Y*q.Y))) * RAD_TO_DEG);       //Roll
+            // float SingularityTest = q.Z * q.X - q.W * q.Y;
+            // float YawY = 2.0f * (q.W * q.Z + q.X * q.Y);
+            // float YawX = (1.0f - 2.0f * (q.Y * q.Y + q.Z * q.Z));
+            // float RAD_TO_DEG = (float)(180 / Math.PI);
+            // //
+            // ret.X = (float)(Math.Asin(2.0f * SingularityTest) * RAD_TO_DEG); // Pitch
+            // ret.Y = (float)(Math.Atan2(YawY, YawX) * RAD_TO_DEG);  // Yaw
+            // ret.Z = (float)(Math.Atan2(-2.0f * (q.W*q.X + q.Y*q.Z), (1.0f - 2.0f * (q.X * q.X + q.Y*q.Y))) * RAD_TO_DEG);       //Roll
 
             // ret.Y =   (float)((180 / Math.PI) * Math.Atan2(2f * q.X * q.W + 2f * q.Y * q.Z, 1 - 2f * (q.Z*q.Z  + q.W * q.W)));     // Yaw 
             // ret.X = (float)((180 / Math.PI) * Math.Asin(2f * ( q.X * q.Z - q.W * q.Y ) ));                             // Pitch 
             // ret.Z = (float)((180 / Math.PI) * Math.Atan2(2f * q.X * q.Y + 2f * q.Z * q.W, 1 - 2f * (q.Y * q.Y + q.Z * q.Z)));      // Roll 
+            
+            // ThreeAxisRot( -2*(q.Y*q.Z - q.W*q.X),
+            //     q.W*q.W - q.X*q.X - q.Y*q.Y + q.X*q.X,
+            //     2*(q.X*q.Z + q.W*q.Y),
+            //     -2*(q.X*q.Y - q.W*q.Z),
+            //     q.W*q.W + q.X*q.X - q.Y*q.Y - q.Z*q.Z,
+            //     out ret);
+            
+            // ThreeAxisRot( 2*(q.X*q.Y + q.W*q.Z),
+            //     q.W*q.W + q.X*q.X - q.Y*q.Y - q.Z*q.Z,
+            //     -2*(q.X*q.Z - q.W*q.Y),
+            //     2*(q.Y*q.Z + q.W*q.X),
+            //     q.W*q.W - q.X*q.X - q.Y*q.Y + q.Z*q.Z,
+            //     out ret);
+            
             return ret;
         }
     }
@@ -108,6 +230,7 @@ namespace smdconv
 
             List<Vector3> instanceLocationList = new List<Vector3>();
             List<Quaternion> instanceRotationList = new List<Quaternion>();
+            List<Vector3> instanceDirectEuler = new List<Vector3>();
 
             List<KeyValuePair<int, KeyValuePair<Vector3, Quaternion>>> realInstanceList =
                 new List<KeyValuePair<int, KeyValuePair<Vector3, Quaternion>>>();
@@ -200,11 +323,11 @@ namespace smdconv
                     {
                         line = streamReader.ReadLine();
                         var v3 = line.Split(' ');
-                        Vertice[v] = new Vector3( float.Parse(v3[0]), float.Parse(v3[1]), float.Parse(v3[2]) );
+                        Vertice[v] = new Vector3( float.Parse(v3[0]), -float.Parse(v3[2]), float.Parse(v3[1]) );
                         
                         line = streamReader.ReadLine();
                         v3 = line.Split(' ');
-                        Normals[v] = new Vector3( float.Parse(v3[0]), float.Parse(v3[1]), float.Parse(v3[2]) );
+                        Normals[v] = new Vector3( float.Parse(v3[0]), -float.Parse(v3[2]), float.Parse(v3[1]) );
                         
                         line = streamReader.ReadLine();
                         if(TexcoordCount > 0)
@@ -247,10 +370,11 @@ namespace smdconv
                     var side2 = Vector3.Normalize(ref1_3 - ref1_1);
 
                     var up = Vector3.Cross(side1, side2);
-                    var front = Vector3.Cross(up, side1);
-
-                    up = new Vector3(0, 1, 0);
-                    front = new Vector3(0, 0, -1);
+                    up = Vector3.Normalize(up);
+                    var front = Vector3.Cross(side1, up);
+                    front = Vector3.Normalize(front);
+                    //up = new Vector3(0, 1, 0);
+                    //front = new Vector3(0, 0, -1);
                     //Quaternion rotation = Quaternion.ax
 
                     Matrix4x4 worldMat = Matrix4x4.CreateWorld(ref1_1, front, up);
@@ -260,7 +384,10 @@ namespace smdconv
                     var translation = new Vector3();
                     var rotation = new Quaternion();
                     var scale = new Vector3();
+                    var directEuler = new Vector3();
 
+                    QuatExtensions.MatrixDecomposeYawPitchRoll( worldMat, out directEuler );
+                    
                     Matrix4x4.Decompose(worldMat, out scale, out rotation, out translation);
                     // Console.WriteLine("Translation: {0}",translation);
                     // Console.WriteLine("Rotation: {0}", rotation.ToEulerAngles());
@@ -295,7 +422,8 @@ namespace smdconv
                             Normals[v] = Vector3.TransformNormal(Normals[v], worldMatInv);
                         }
                         instanceLocationList.Add(translation);
-                        instanceRotationList.Add(rotation);
+                        instanceRotationList.Add(Quaternion.Normalize(rotation));
+                        instanceDirectEuler.Add(directEuler);
                     }
 
                     for (int t = 0; t < TriCount; ++t)
@@ -380,15 +508,23 @@ namespace smdconv
                 // write instance transform
                 for (int i = 0; i < instanceLocationList.Count; i++)
                 {
+                    // if (i != 128)
+                    // {
+                    //     continue;
+                    // }
                     streamWriter.WriteLine(String.Format("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{0} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'",i));
                     streamWriter.WriteLine("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'");
                     streamWriter.WriteLine("         End Object");
                     streamWriter.WriteLine("         Begin Object Name=\"StaticMeshComponent0\"");
                     streamWriter.WriteLine(String.Format("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{0}.ope-entrance-meadow-sun_0_{0}\"'",i));
                     streamWriter.WriteLine("            StaticMeshImportVersion=1");
-                    streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",instanceLocationList[i].X*100,instanceLocationList[i].Y*100,instanceLocationList[i].Z*100));
-                    var euler = instanceRotationList[i].ToEulerAngles();
-                    streamWriter.WriteLine(String.Format("            RelativeRotation=(Pitch={0},Yaw={1},Roll={2})",euler.X,euler.Y,euler.Z));
+                    streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",-instanceLocationList[i].X*100,instanceLocationList[i].Y*100,instanceLocationList[i].Z*100));
+                    var quatL = new Quaternion(instanceRotationList[i].X, instanceRotationList[i].Z,
+                        -instanceRotationList[i].Y, instanceRotationList[i].W);
+                    //var euler = instanceRotationList[i].ToEulerAngles();
+                    var euler = instanceDirectEuler[i];
+                    //streamWriter.WriteLine(String.Format("            RelativeRotation=(Pitch={0},Yaw={1},Roll={2})",euler.X,euler.Y,euler.Z));
+                    streamWriter.WriteLine(String.Format("            RelativeRotation=(Pitch={0},Yaw={1},Roll={2})",euler.Y,euler.Z,180 - euler.X));
                     streamWriter.WriteLine("         End Object");
                     streamWriter.WriteLine("         StaticMeshComponent=\"StaticMeshComponent0\"");
                     streamWriter.WriteLine("         RootComponent=\"StaticMeshComponent0\"");
