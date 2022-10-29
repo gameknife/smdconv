@@ -524,7 +524,7 @@ namespace smdconv
                     //var euler = instanceRotationList[i].ToEulerAngles();
                     var euler = instanceDirectEuler[i];
                     //streamWriter.WriteLine(String.Format("            RelativeRotation=(Pitch={0},Yaw={1},Roll={2})",euler.X,euler.Y,euler.Z));
-                    streamWriter.WriteLine(String.Format("            RelativeRotation=(Pitch={0},Yaw={1},Roll={2})",euler.Y,euler.Z,180 - euler.X));
+                    streamWriter.WriteLine(String.Format("            RelativeRotation=(Pitch={0},Yaw={1},Roll={2})",180 - euler.Y,-euler.Z,euler.X));
                     streamWriter.WriteLine("         End Object");
                     streamWriter.WriteLine("         StaticMeshComponent=\"StaticMeshComponent0\"");
                     streamWriter.WriteLine("         RootComponent=\"StaticMeshComponent0\"");

@@ -116,9 +116,47 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
 
         # deselect all objects
         bpy.ops.object.select_all(action='DESELECT')
+        
+        levelfile = open(os.path.join(folder_path, "ue.level"), 'w')
+        levelfile.write('Begin Map\n')
+        levelfile.write('Begin Level\n')
 
+        counter = 0
+        
+            
         for item in obj_export_list:
             item.select_set(True)
+
+            euler = item.rotation_quaternion.to_euler('XYZ')
+            # streamWriter.WriteLine(String.Format("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{0} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'",i));
+            # streamWriter.WriteLine("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'");
+            # streamWriter.WriteLine("         End Object");
+            # streamWriter.WriteLine("         Begin Object Name=\"StaticMeshComponent0\"");
+            # streamWriter.WriteLine(String.Format("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{0}.ope-entrance-meadow-sun_0_{0}\"'",i));
+            # streamWriter.WriteLine("            StaticMeshImportVersion=1");
+            # streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",-instanceLocationList[i].X*100,instanceLocationList[i].Y*100,instanceLocationList[i].Z*100));
+            # streamWriter.WriteLine(String.Format("            RelativeRotation=(Pitch={0},Yaw={1},Roll={2})",euler.Y,euler.Z,180 - euler.X));
+            # streamWriter.WriteLine("         End Object");
+            # streamWriter.WriteLine("         StaticMeshComponent=\"StaticMeshComponent0\"");
+            # streamWriter.WriteLine("         RootComponent=\"StaticMeshComponent0\"");
+            # streamWriter.WriteLine(String.Format("         ActorLabel=\"ope-entrance-meadow-sun_{0}\"", i));
+            # streamWriter.WriteLine("      End Actor");
+
+            levelfile.write("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'\n".format(counter))
+            levelfile.write("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'\n")
+            levelfile.write("         End Object\n")
+            levelfile.write("         Begin Object Name=\"StaticMeshComponent0\"\n")
+            levelfile.write("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{}.ope-entrance-meadow-sun_0_{}\"'\n".format(counter, counter))
+            levelfile.write("            StaticMeshImportVersion=1\n")
+            levelfile.write("            RelativeLocation=(X={},Y={},Z={})\n".format(-item.location[0]*100,item.location[1]*100,item.location[2]*100))
+            levelfile.write("            RelativeRotation=(Pitch={},Yaw={},Roll={})\n".format(-euler[1]*57.29578,180 - euler[2]*57.29578,euler[0]*57.29578))
+            levelfile.write("         End Object\n")
+            levelfile.write("         StaticMeshComponent=\"StaticMeshComponent0\"\n")
+            levelfile.write("         RootComponent=\"StaticMeshComponent0\"\n")
+            levelfile.write("         ActorLabel=\"ope-entrance-meadow-sun_{}\"\n".format(counter))
+            levelfile.write("      End Actor\n")
+            counter = counter + 1
+
             item.location = Vector([0,0,0])
             item.rotation_quaternion = Vector([1,0,0,0])
             if item.type == 'MESH':
@@ -159,9 +197,12 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
                         use_metadata=True, 
                         axis_forward=self.axis_forward_setting, 
                         axis_up=self.axis_up_setting
-                        )
-
+                        )            
             item.select_set(False)
+
+        levelfile.write('Begin Surface\n')
+        levelfile.write('End Surface\n')
+        levelfile.write('End Map\n')
 
         # restore viewport selection
         for ob in viewport_selection:
