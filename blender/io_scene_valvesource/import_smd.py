@@ -631,11 +631,11 @@ class SmdImporter(bpy.types.Operator, Logger):
 			mat = bpy.data.materials.new(mat_name)
 			md.materials.append(mat)
 			# Give it a random colour
-			randCol = []
-			for i in range(3):
-				randCol.append(random.uniform(.4,1))
-			randCol.append(1)
-			mat.diffuse_color = randCol
+			# randCol = []
+			# for i in range(3):
+			# 	randCol.append(random.uniform(.4,1))
+			# randCol.append(1)
+			#mat.diffuse_color = [0.5,0.5,0.5,1.0]
 			if smd.jobType == PHYS:
 				smd.m.display_type = 'SOLID'
 			mat_ind = len(md.materials) - 1
@@ -653,11 +653,14 @@ class SmdImporter(bpy.types.Operator, Logger):
 			mesh_name += " ref"
 		mesh_name = self.truncate_id_name(mesh_name, bpy.types.Mesh)
 
+		mesh_name = "{}.{}".format(smd.jobName,self.levelProgress)
+
 		# Create a new mesh object, disable double-sided rendering, link it to the current scene
 		smd.m = bpy.data.objects.new(mesh_name,bpy.data.meshes.new(mesh_name))
 
-		smd.m.parent = smd.a
+		# smd.m.parent = smd.a
 		smd.g.objects.link(smd.m)
+
 		if smd.jobType == REF: # can only have flex on a ref mesh
 			if self.qc:
 				self.qc.ref_mesh = smd.m # for VTA import
@@ -794,19 +797,32 @@ class SmdImporter(bpy.types.Operator, Logger):
 
 			if badWeights:
 				self.warning(get_id("importer_err_badweights", True).format(badWeights,smd.jobName))
-			print("- Imported {} polys".format(countPolys))
+			#print("- Imported {} polys".format(countPolys))
 
 			# fetch loction
 			self.levelProgress = self.levelProgress + 1
-			print("- Location {} - {}".format(self.levelProgress, self.levelTransform[self.levelProgress]))
+			#print("- Location {} - {}".format(self.levelProgress, self.levelTransform[self.levelProgress]))
 			locstr = self.levelTransform[self.levelProgress].split()
 						
 			smd.m.location = Vector( [float(locstr[0]), float(locstr[1]), float(locstr[2])])
-			#smd.m.rotation_euler = Vector( [float(locstr[3]), float(locstr[4]), float(locstr[5])] )
 			smd.m.rotation_mode = "QUATERNION"
 			smd.m.rotation_quaternion = Vector( [float(locstr[6]), float(locstr[3]), float(locstr[4]), float(locstr[5])] )
-			# if smd.upAxis == 'Y':
-			# 	smd.m.transform(rx90)
+
+			# instance list, create instance
+			# fetch all instance match this line
+			instCount = 0
+			for line in self.levelInstance:
+				instanceInfo = line.split()
+				if len(instanceInfo) == 11:
+					if (self.levelProgress - 1) == int(instanceInfo[0]):
+						instance = smd.m.copy()
+						instance.name = "{}.{}.inst.{}".format(smd.jobName,instanceInfo[0],instCount)
+						instCount = instCount + 1
+						instance.location = Vector( [float(instanceInfo[1]), float(instanceInfo[2]), float(instanceInfo[3])])
+						instance.rotation_mode = "QUATERNION"
+						instance.rotation_quaternion = Vector( [float(instanceInfo[7]), float(instanceInfo[4]), float(instanceInfo[5]), float(instanceInfo[6])] )
+						instance.scale = Vector( [float(instanceInfo[8]), float(instanceInfo[9]), float(instanceInfo[10])])
+						smd.g.objects.link(instance)
 
 	# vertexanimation block
 	def readShapes(self):
@@ -1248,6 +1264,9 @@ class SmdImporter(bpy.types.Operator, Logger):
 		levelFilename = filepath + ".level"
 		levelFile = open(levelFilename, 'r')
 		self.levelTransform = levelFile.readlines()
+		levelInstanceFilename = filepath + ".levelinstance"
+		levelInstanceFile = open(levelInstanceFilename, 'r')
+		self.levelInstance = levelInstanceFile.readlines()
 		self.levelProgress = 0
 
 		for line in file:

@@ -121,6 +121,7 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
         levelfile.write('Begin Map\n')
         levelfile.write('Begin Level\n')
 
+        fbxcounter = -1
         counter = 0
         
             
@@ -128,27 +129,58 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
             item.select_set(True)
 
             euler = item.rotation_quaternion.to_euler('XYZ')
-            # streamWriter.WriteLine(String.Format("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{0} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'",i));
-            # streamWriter.WriteLine("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'");
-            # streamWriter.WriteLine("         End Object");
-            # streamWriter.WriteLine("         Begin Object Name=\"StaticMeshComponent0\"");
-            # streamWriter.WriteLine(String.Format("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{0}.ope-entrance-meadow-sun_0_{0}\"'",i));
-            # streamWriter.WriteLine("            StaticMeshImportVersion=1");
-            # streamWriter.WriteLine(String.Format("            RelativeLocation=(X={0},Y={1},Z={2})",-instanceLocationList[i].X*100,instanceLocationList[i].Y*100,instanceLocationList[i].Z*100));
-            # streamWriter.WriteLine(String.Format("            RelativeRotation=(Pitch={0},Yaw={1},Roll={2})",euler.Y,euler.Z,180 - euler.X));
-            # streamWriter.WriteLine("         End Object");
-            # streamWriter.WriteLine("         StaticMeshComponent=\"StaticMeshComponent0\"");
-            # streamWriter.WriteLine("         RootComponent=\"StaticMeshComponent0\"");
-            # streamWriter.WriteLine(String.Format("         ActorLabel=\"ope-entrance-meadow-sun_{0}\"", i));
-            # streamWriter.WriteLine("      End Actor");
+            location = item.location.copy()
 
+            item.location = Vector([0,0,0])
+            item.rotation_quaternion = Vector([1,0,0,0])
+            if item.type == 'MESH' and not ".inst." in item.name:
+                fbxcounter = fbxcounter + 1
+                file_path = os.path.join(folder_path, "{}.fbx".format(item.name))
+
+                # FBX settings
+                # bpy.ops.export_scene.fbx(
+                #         filepath=file_path, 
+                #         use_selection=self.use_selection_setting, 
+                #         use_active_collection=False, 
+                #         global_scale=self.global_scale_setting, 
+                #         apply_unit_scale=True, 
+                #         apply_scale_options='FBX_SCALE_NONE', 
+                #         bake_space_transform=False, 
+                #         object_types={'EMPTY', 'CAMERA', 'LIGHT', 'ARMATURE', 'MESH', 'OTHER'}, 
+                #         use_mesh_modifiers=self.use_mesh_modifiers_setting, 
+                #         use_mesh_modifiers_render=True, 
+                #         mesh_smooth_type='OFF', 
+                #         use_subsurf=False, 
+                #         use_mesh_edges=False, 
+                #         use_tspace=False, 
+                #         use_custom_props=False, 
+                #         add_leaf_bones=True, primary_bone_axis='Y', 
+                #         secondary_bone_axis='X', 
+                #         use_armature_deform_only=False, 
+                #         armature_nodetype='NULL', 
+                #         bake_anim=True, 
+                #         bake_anim_use_all_bones=True, 
+                #         bake_anim_use_nla_strips=True, 
+                #         bake_anim_use_all_actions=True, 
+                #         bake_anim_force_startend_keying=True, 
+                #         bake_anim_step=1, 
+                #         bake_anim_simplify_factor=1, 
+                #         path_mode='AUTO', 
+                #         embed_textures=False, 
+                #         batch_mode='OFF', 
+                #         use_batch_own_dir=True, 
+                #         use_metadata=True, 
+                #         axis_forward=self.axis_forward_setting, 
+                #         axis_up=self.axis_up_setting
+                #         )       
+            
             levelfile.write("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'\n".format(counter))
             levelfile.write("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'\n")
             levelfile.write("         End Object\n")
             levelfile.write("         Begin Object Name=\"StaticMeshComponent0\"\n")
-            levelfile.write("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{}.ope-entrance-meadow-sun_0_{}\"'\n".format(counter, counter))
+            levelfile.write("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{}.ope-entrance-meadow-sun_0_{}\"'\n".format(fbxcounter, fbxcounter))
             levelfile.write("            StaticMeshImportVersion=1\n")
-            levelfile.write("            RelativeLocation=(X={},Y={},Z={})\n".format(-item.location[0]*100,item.location[1]*100,item.location[2]*100))
+            levelfile.write("            RelativeLocation=(X={},Y={},Z={})\n".format(-location[0]*100,location[1]*100,location[2]*100))
             levelfile.write("            RelativeRotation=(Pitch={},Yaw={},Roll={})\n".format(-euler[1]*57.29578,180 - euler[2]*57.29578,euler[0]*57.29578))
             levelfile.write("         End Object\n")
             levelfile.write("         StaticMeshComponent=\"StaticMeshComponent0\"\n")
@@ -157,47 +189,6 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
             levelfile.write("      End Actor\n")
             counter = counter + 1
 
-            item.location = Vector([0,0,0])
-            item.rotation_quaternion = Vector([1,0,0,0])
-            if item.type == 'MESH':
-                file_path = os.path.join(folder_path, "{}.fbx".format(item.name))
-
-                # FBX settings
-                bpy.ops.export_scene.fbx(
-                        filepath=file_path, 
-                        use_selection=self.use_selection_setting, 
-                        use_active_collection=False, 
-                        global_scale=self.global_scale_setting, 
-                        apply_unit_scale=True, 
-                        apply_scale_options='FBX_SCALE_NONE', 
-                        bake_space_transform=False, 
-                        object_types={'EMPTY', 'CAMERA', 'LIGHT', 'ARMATURE', 'MESH', 'OTHER'}, 
-                        use_mesh_modifiers=self.use_mesh_modifiers_setting, 
-                        use_mesh_modifiers_render=True, 
-                        mesh_smooth_type='OFF', 
-                        use_subsurf=False, 
-                        use_mesh_edges=False, 
-                        use_tspace=False, 
-                        use_custom_props=False, 
-                        add_leaf_bones=True, primary_bone_axis='Y', 
-                        secondary_bone_axis='X', 
-                        use_armature_deform_only=False, 
-                        armature_nodetype='NULL', 
-                        bake_anim=True, 
-                        bake_anim_use_all_bones=True, 
-                        bake_anim_use_nla_strips=True, 
-                        bake_anim_use_all_actions=True, 
-                        bake_anim_force_startend_keying=True, 
-                        bake_anim_step=1, 
-                        bake_anim_simplify_factor=1, 
-                        path_mode='AUTO', 
-                        embed_textures=False, 
-                        batch_mode='OFF', 
-                        use_batch_own_dir=True, 
-                        use_metadata=True, 
-                        axis_forward=self.axis_forward_setting, 
-                        axis_up=self.axis_up_setting
-                        )            
             item.select_set(False)
 
         levelfile.write('Begin Surface\n')
