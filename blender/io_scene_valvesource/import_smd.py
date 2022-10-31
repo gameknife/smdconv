@@ -629,6 +629,23 @@ class SmdImporter(bpy.types.Operator, Logger):
 		else: # material does not exist
 			print("- New material: {}".format(mat_name))
 			mat = bpy.data.materials.new(mat_name)
+			mat.use_nodes=True 
+			material_output = mat.node_tree.nodes.get('Material Output')
+			principled_BSDF = mat.node_tree.nodes.get('Principled BSDF')
+
+			# test image
+			imgpath = 'D:/uncharted4/zSource/test.png'
+			img = bpy.data.images.load(imgpath)
+			tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
+			tex_node.image = img
+			mat.node_tree.links.new(tex_node.outputs[0], principled_BSDF.inputs[0])
+
+			imgpath = 'D:/uncharted4/zSource/testnormal.png'
+			img = bpy.data.images.load(imgpath)
+			tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
+			tex_node.image = img
+			mat.node_tree.links.new(tex_node.outputs[0], principled_BSDF.inputs[19])
+
 			md.materials.append(mat)
 			# Give it a random colour
 			# randCol = []

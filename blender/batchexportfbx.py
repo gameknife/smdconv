@@ -130,6 +130,9 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
 
             euler = item.rotation_quaternion.to_euler('XYZ')
             location = item.location.copy()
+            scale = item.scale.copy()
+            rot_quat = item.rotation_quaternion.copy()
+            root_name = item.users_collection[0].name
 
             item.location = Vector([0,0,0])
             item.rotation_quaternion = Vector([1,0,0,0])
@@ -138,57 +141,60 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
                 file_path = os.path.join(folder_path, "{}.fbx".format(item.name))
 
                 # FBX settings
-                # bpy.ops.export_scene.fbx(
-                #         filepath=file_path, 
-                #         use_selection=self.use_selection_setting, 
-                #         use_active_collection=False, 
-                #         global_scale=self.global_scale_setting, 
-                #         apply_unit_scale=True, 
-                #         apply_scale_options='FBX_SCALE_NONE', 
-                #         bake_space_transform=False, 
-                #         object_types={'EMPTY', 'CAMERA', 'LIGHT', 'ARMATURE', 'MESH', 'OTHER'}, 
-                #         use_mesh_modifiers=self.use_mesh_modifiers_setting, 
-                #         use_mesh_modifiers_render=True, 
-                #         mesh_smooth_type='OFF', 
-                #         use_subsurf=False, 
-                #         use_mesh_edges=False, 
-                #         use_tspace=False, 
-                #         use_custom_props=False, 
-                #         add_leaf_bones=True, primary_bone_axis='Y', 
-                #         secondary_bone_axis='X', 
-                #         use_armature_deform_only=False, 
-                #         armature_nodetype='NULL', 
-                #         bake_anim=True, 
-                #         bake_anim_use_all_bones=True, 
-                #         bake_anim_use_nla_strips=True, 
-                #         bake_anim_use_all_actions=True, 
-                #         bake_anim_force_startend_keying=True, 
-                #         bake_anim_step=1, 
-                #         bake_anim_simplify_factor=1, 
-                #         path_mode='AUTO', 
-                #         embed_textures=False, 
-                #         batch_mode='OFF', 
-                #         use_batch_own_dir=True, 
-                #         use_metadata=True, 
-                #         axis_forward=self.axis_forward_setting, 
-                #         axis_up=self.axis_up_setting
-                #         )       
+                bpy.ops.export_scene.fbx(
+                        filepath=file_path, 
+                        use_selection=self.use_selection_setting, 
+                        use_active_collection=False, 
+                        global_scale=self.global_scale_setting, 
+                        apply_unit_scale=True, 
+                        apply_scale_options='FBX_SCALE_NONE', 
+                        bake_space_transform=False, 
+                        object_types={'EMPTY', 'CAMERA', 'LIGHT', 'ARMATURE', 'MESH', 'OTHER'}, 
+                        use_mesh_modifiers=self.use_mesh_modifiers_setting, 
+                        use_mesh_modifiers_render=True, 
+                        mesh_smooth_type='OFF', 
+                        use_subsurf=False, 
+                        use_mesh_edges=False, 
+                        use_tspace=False, 
+                        use_custom_props=False, 
+                        add_leaf_bones=True, primary_bone_axis='Y', 
+                        secondary_bone_axis='X', 
+                        use_armature_deform_only=False, 
+                        armature_nodetype='NULL', 
+                        bake_anim=True, 
+                        bake_anim_use_all_bones=True, 
+                        bake_anim_use_nla_strips=True, 
+                        bake_anim_use_all_actions=True, 
+                        bake_anim_force_startend_keying=True, 
+                        bake_anim_step=1, 
+                        bake_anim_simplify_factor=1, 
+                        path_mode='AUTO', 
+                        embed_textures=False, 
+                        batch_mode='OFF', 
+                        use_batch_own_dir=True, 
+                        use_metadata=True, 
+                        axis_forward=self.axis_forward_setting, 
+                        axis_up=self.axis_up_setting
+                        ) 
             
             levelfile.write("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'\n".format(counter))
             levelfile.write("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'\n")
             levelfile.write("         End Object\n")
             levelfile.write("         Begin Object Name=\"StaticMeshComponent0\"\n")
-            levelfile.write("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/ope-entrance-meadow-sun_0_{}.ope-entrance-meadow-sun_0_{}\"'\n".format(fbxcounter, fbxcounter))
+            levelfile.write("            StaticMesh=StaticMesh'\"/MapIsland/Assets/U4/{}_{}.{}_{}\"'\n".format(root_name, fbxcounter, root_name, fbxcounter))
             levelfile.write("            StaticMeshImportVersion=1\n")
             levelfile.write("            RelativeLocation=(X={},Y={},Z={})\n".format(-location[0]*100,location[1]*100,location[2]*100))
             levelfile.write("            RelativeRotation=(Pitch={},Yaw={},Roll={})\n".format(-euler[1]*57.29578,180 - euler[2]*57.29578,euler[0]*57.29578))
+            levelfile.write("            RelativeScale3D=(X={},Y={},Z={})\n".format(scale[0],scale[1],scale[2]))
             levelfile.write("         End Object\n")
             levelfile.write("         StaticMeshComponent=\"StaticMeshComponent0\"\n")
             levelfile.write("         RootComponent=\"StaticMeshComponent0\"\n")
-            levelfile.write("         ActorLabel=\"ope-entrance-meadow-sun_{}\"\n".format(counter))
+            levelfile.write("         ActorLabel=\"{}_{}\"\n".format(root_name, counter))
             levelfile.write("      End Actor\n")
             counter = counter + 1
 
+            item.location = location
+            item.rotation_quaternion = rot_quat
             item.select_set(False)
 
         levelfile.write('Begin Surface\n')
