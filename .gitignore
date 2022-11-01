@@ -3,3 +3,4 @@ blender/io_scene_valvesource/__pycache__/
 .vs/
 bin/
 obj/
+*.user

@@ -3,12 +3,14 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using ImageMagick;
 
 
 namespace smdconv
@@ -39,11 +41,129 @@ namespace smdconv
         public Quaternion Rotation;
         public Vector3 Scale;
     }
+
+    class Texconv
+    {
+        static Dictionary<string, string> formatMap = new Dictionary<string, string>
+        {
+            { "Bc1", "BC1" }, 
+            { "Bc1UNorm", "BC1" }, 
+            { "Bc1UNormSrgb", "BC1" }, 
+            { "Bc2UNorm", "BC2" },
+            { "Bc3UNorm", "BC3" },
+            { "Bc4UNorm", "BC4" },
+            { "Bc5UNorm", "BC5" },
+            { "Bc7UNorm", "BC7" }
+        };
+        public static void Dds2Tga( string src, string dst)
+        {
+            if (File.Exists(dst))
+            {
+                return;
+            }
+            if (!Directory.Exists(Path.GetDirectoryName(dst)))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(dst));
+            }
+    
+            if (File.Exists(src) && dst.Contains(".png"))
+            {
+                //Console.WriteLine("{0} -> {1}", src, dst);
+
+                var gnfProcessor = Path.Join(AppDomain.CurrentDomain.BaseDirectory, "orbis-image2gnf.exe");
+                var deswizzleProcessor = Path.Join(AppDomain.CurrentDomain.BaseDirectory, "RawtexCmd.exe");
+                var tgaProcessor = Path.Join(AppDomain.CurrentDomain.BaseDirectory, "Pfim.Skia.exe");
+                var dstPs4 = dst.Replace(".png", ".ps4");
+                var dstTmp = dst.Replace(".png", ".dds");
+                
+                // var process = Process.Start(processor, String.Format("-i \"{0}\" -f Auto -o \"{1}\"", src, dstPs4));
+                // process.WaitForExit();
+                //
+                
+                var proc = new Process 
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = gnfProcessor,
+                        Arguments = String.Format("-i \"{0}\" -f Auto -o \"{1}\"", src, dstPs4),
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    }
+                };
+
+                string format = "BC1";
+                proc.Start();
+                while (!proc.StandardOutput.EndOfStream)
+                {
+                    string line = proc.StandardOutput.ReadLine();
+                    // do something with line
+                    
+                    int findIdx = line.LastIndexOf(" to : ");
+                    if ( findIdx >= 0)
+                    {
+                        format = line.Substring(findIdx + 7, line.Length - findIdx - 8);
+                        //Console.WriteLine(format);
+                    }
+                }
+
+                format = formatMap[format];
+                proc.WaitForExit();
+                
+                var proc1 = new Process 
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = deswizzleProcessor,
+                        Arguments = String.Format("\"{0}\" {1} 100", dstPs4, format),
+                        UseShellExecute = false,
+                        RedirectStandardOutput = false,
+                        CreateNoWindow = true
+                    }
+                };
+                
+                proc1.Start();
+                proc1.WaitForExit();
+                
+
+                var proc2 = new Process 
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = tgaProcessor,
+                        Arguments = String.Format("\"{0}\"", dstTmp),
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    }
+                };
+
+                proc2.Start();
+                while (!proc2.StandardOutput.EndOfStream)
+                {
+                    string line = proc2.StandardOutput.ReadLine();
+                    Console.WriteLine(line);
+                }
+                proc2.WaitForExit();
+
+                File.Delete(dstTmp);
+                File.Delete(dstPs4);
+                
+                // MagickImage Flip
+                using (var image = new MagickImage(dst))
+                {
+                    image.Flip();
+                    image.Write(dst);
+                }
+            }
+        }
+    }
     class Program
     {
         private static String m_Title = "custom ascii mesh to smd tools";
         private static bool SkipInstance = true;
         private static bool ExtractNode = true;
+        private static String SrcDirectory = "";
 
         public static byte[] GetHash(string inputString)
         {
@@ -54,10 +174,23 @@ namespace smdconv
         public static string GetHashString(string inputString)
         {
             StringBuilder sb = new StringBuilder();
-            foreach (byte b in GetHash(inputString))
-                sb.Append(b.ToString("X2"));
+            var sha = GetHash(inputString);
+            // foreach (byte b in GetHash(inputString))
+            //     sb.Append(b.ToString("X2"));
+            
+            // get the first 12
+            for (int i = 0; i < 12; ++i)
+            {
+                sb.Append(sha[i].ToString("X2"));
+            }
 
             return sb.ToString();
+        }
+
+        public static string TransferTexturePath(string src)
+        {
+            var filename = Path.GetFileName(src).Replace(".tga", ".png");
+            return Path.Join(SrcDirectory, "textures", filename);
         }
 
         static void Main(string[] args)
@@ -71,7 +204,7 @@ namespace smdconv
             Console.WriteLine(m_Title);
             Console.ResetColor();
 
-            if (args.Length < 2)
+            if (args.Length < 3)
             {
                 Console.ForegroundColor = ConsoleColor.White;
                 Console.WriteLine("[Usage]");
@@ -88,14 +221,43 @@ namespace smdconv
 
             // 输入命令行处理
             String[] SrcMeshFiles = args;
-            String SrcMeshFileRoot = args[1];
-            String SrcShaderFileRoot = args[0];
+            String SrcMeshFileRoot = args[2];
+            String SrcShaderFileRoot = args[1]; 
+            SrcDirectory = Path.GetDirectoryName(SrcShaderFileRoot);
+            String SrcTextureLib = "D:\\uncharted4\\zSource\\t2";
             
             if (!File.Exists(SrcMeshFileRoot))
             {
                 Console.WriteLine("[Error] Src File Not Exist!");
                 return;
             }
+            
+            // Tex Parse
+            String SrcTextureFileRoot = args[0];
+            var allTextures = File.ReadAllLines(SrcTextureFileRoot);
+            for(int i = 3; i < allTextures.Length; ++i)
+            {
+                string src = allTextures[i];
+                src = src.Replace(".ndb", ".dds");
+                src = Path.Join(SrcTextureLib, src);
+                string targetName = Path.GetDirectoryName(src);
+                string dst = targetName;
+                dst = Path.Join(SrcDirectory, "textures", Path.GetFileName(dst));
+                dst = dst.Replace(".tga", ".png");
+                
+                if (!File.Exists(src))
+                {
+                    src = src.Replace(".dds", "_dx10.dds");
+                    if (!File.Exists(src))
+                    {
+                        
+                    }
+                }
+                Console.WriteLine("{0} -> {1}", src, dst);
+                Texconv.Dds2Tga(src, dst);
+            }
+
+            //return;
             
             // 材质parse
             String DstMaterialFile = Path.GetFileNameWithoutExtension(SrcMeshFileRoot) + ".smd.mat";
@@ -150,23 +312,23 @@ namespace smdconv
                                 // remap the textuew
                                 if (Regex.IsMatch(keyvalue[0], @"g_tNdFetchBaseColor.*Map", RegexOptions.IgnoreCase))
                                 {
-                                    colormap.Add(keyvalue[1]);
+                                    colormap.Add(TransferTexturePath(keyvalue[1]));
                                 }
                                 if (Regex.IsMatch(keyvalue[0], @"g_tNdFetchNormal.*Map", RegexOptions.IgnoreCase))
                                 {
-                                    normalmap.Add(keyvalue[1]);
+                                    normalmap.Add(TransferTexturePath(keyvalue[1]));
                                 }
                                 if (Regex.IsMatch(keyvalue[0], @"g_tNdFetchPack.*Map", RegexOptions.IgnoreCase))
                                 {
-                                    packmap.Add(keyvalue[1]);
+                                    packmap.Add(TransferTexturePath(keyvalue[1]));
                                 }
                                 if (Regex.IsMatch(keyvalue[0], @"g_tNdFetchTransparency.*Map", RegexOptions.IgnoreCase))
                                 {
-                                    transpmap.Add(keyvalue[1]);
+                                    transpmap.Add(TransferTexturePath(keyvalue[1]));
                                 }
                                 if (!KeyUniqueList.Contains(keyvalue[0]))
                                 {
-                                    KeyUniqueList.Add(keyvalue[0]);
+                                    KeyUniqueList.Add(TransferTexturePath(keyvalue[1]));
                                 }
 
                                 textureGroup += keyvalue[1];
@@ -229,7 +391,7 @@ namespace smdconv
 
             const Int32 BufferSize = 1024;
 
-            for (int file = 1; file < SrcMeshFiles.Length; ++file)
+            for (int file = 2; file < SrcMeshFiles.Length; ++file)
             {
                 var fileStream = File.OpenRead(SrcMeshFiles[file]);
                 var streamReader = new StreamReader(fileStream, Encoding.UTF8, true, BufferSize);
@@ -276,7 +438,7 @@ namespace smdconv
                         //Console.WriteLine(hash);
 
 
-                        materialName = String.Format("mat_{0}", materialCount++);
+                        materialName = hash;
                         existMaterialToken.Add(hash, materialName);
                         
                         //Console.WriteLine(hash);

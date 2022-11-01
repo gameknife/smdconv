@@ -18,6 +18,7 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
+import json
 import bpy, bmesh, random, collections
 from bpy import ops
 from bpy.app.translations import pgettext
@@ -633,18 +634,22 @@ class SmdImporter(bpy.types.Operator, Logger):
 			material_output = mat.node_tree.nodes.get('Material Output')
 			principled_BSDF = mat.node_tree.nodes.get('Principled BSDF')
 
-			# test image
 			imgpath = 'D:/uncharted4/zSource/test.png'
+			if len( self.levelMatLib[mat_name]["BaseColorTextures"] ) > 0:
+				imgpath = self.levelMatLib[mat_name]["BaseColorTextures"][0]
 			img = bpy.data.images.load(imgpath)
 			tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
 			tex_node.image = img
 			mat.node_tree.links.new(tex_node.outputs[0], principled_BSDF.inputs[0])
 
 			imgpath = 'D:/uncharted4/zSource/testnormal.png'
+			if len( self.levelMatLib[mat_name]["BaseNormalTextures"] ) > 0:
+				imgpath = self.levelMatLib[mat_name]["BaseNormalTextures"][0]
 			img = bpy.data.images.load(imgpath)
 			tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
 			tex_node.image = img
 			mat.node_tree.links.new(tex_node.outputs[0], principled_BSDF.inputs[19])
+			principled_BSDF.inputs[20].default_value = 0.0
 
 			md.materials.append(mat)
 			# Give it a random colour
@@ -1285,6 +1290,10 @@ class SmdImporter(bpy.types.Operator, Logger):
 		levelInstanceFile = open(levelInstanceFilename, 'r')
 		self.levelInstance = levelInstanceFile.readlines()
 		self.levelProgress = 0
+
+		levelMatFilename = filepath + ".mat"
+		levelMatFile = open(levelMatFilename, 'r')
+		self.levelMatLib = json.load(levelMatFile)
 
 		for line in file:
 			if line == "nodes\n": self.readNodes()
