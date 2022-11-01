@@ -46,35 +46,48 @@ namespace smdconv
     {
         static Dictionary<string, string> formatMap = new Dictionary<string, string>
         {
+            { "BC1", "BC1" }, 
             { "Bc1", "BC1" }, 
             { "Bc1UNorm", "BC1" }, 
             { "Bc1UNormSrgb", "BC1" }, 
             { "Bc2UNorm", "BC2" },
             { "Bc3UNorm", "BC3" },
+            { "Bc3UNormSrgb", "BC3" },
             { "Bc4UNorm", "BC4" },
             { "Bc5UNorm", "BC5" },
-            { "Bc7UNorm", "BC7" }
+            { "Bc7UNorm", "BC7" },
+            { "R8G8B8A8UNormSrgb", "DXT1" },
+            { "R8G8B8A8UNorm", "DXT1" },
+            { "R8UNorm", "DXT1" },
         };
-        public static void Dds2Tga( string src, string dst)
+        public static void Dds2Tga( string src, string directory, string dst_pure)
         {
-            if (File.Exists(dst))
+            // 目录确保
+            if (!Directory.Exists(directory))
             {
+                Directory.CreateDirectory(directory);
+            }
+            
+            // fullpath
+            var fullDst = Path.Join(directory, dst_pure);
+            
+            if (File.Exists(fullDst))
+            {
+                //Console.WriteLine("skip {0} -> {1}", src, fullDst);
                 return;
             }
-            if (!Directory.Exists(Path.GetDirectoryName(dst)))
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(dst));
-            }
+            //Console.WriteLine("{0} -> {1}", src, fullDst);
+
     
-            if (File.Exists(src) && dst.Contains(".png"))
+            if (File.Exists(src) && fullDst.Contains(".png"))
             {
                 //Console.WriteLine("{0} -> {1}", src, dst);
 
                 var gnfProcessor = Path.Join(AppDomain.CurrentDomain.BaseDirectory, "orbis-image2gnf.exe");
                 var deswizzleProcessor = Path.Join(AppDomain.CurrentDomain.BaseDirectory, "RawtexCmd.exe");
                 var tgaProcessor = Path.Join(AppDomain.CurrentDomain.BaseDirectory, "Pfim.Skia.exe");
-                var dstPs4 = dst.Replace(".png", ".ps4");
-                var dstTmp = dst.Replace(".png", ".dds");
+                var dstPs4 = fullDst.Replace(".png", ".ps4");
+                var dstTmp = fullDst.Replace(".png", ".dds");
                 
                 // var process = Process.Start(processor, String.Format("-i \"{0}\" -f Auto -o \"{1}\"", src, dstPs4));
                 // process.WaitForExit();
@@ -109,7 +122,7 @@ namespace smdconv
 
                 format = formatMap[format];
                 proc.WaitForExit();
-                
+
                 var proc1 = new Process 
                 {
                     StartInfo = new ProcessStartInfo
@@ -146,14 +159,21 @@ namespace smdconv
                 }
                 proc2.WaitForExit();
 
-                File.Delete(dstTmp);
-                File.Delete(dstPs4);
-                
+                if (File.Exists(dstTmp))
+                {
+                    File.Delete(dstTmp);
+                }
+
+                if (File.Exists(dstPs4))
+                {
+                    File.Delete(dstPs4);
+                }
+
                 // MagickImage Flip
-                using (var image = new MagickImage(dst))
+                using (var image = new MagickImage(fullDst))
                 {
                     image.Flip();
-                    image.Write(dst);
+                    image.Write(fullDst);
                 }
             }
         }
@@ -187,10 +207,22 @@ namespace smdconv
             return sb.ToString();
         }
 
-        public static string TransferTexturePath(string src)
+        public static void TransferTexturePath(ref List<string> map, string src)
         {
+            if (src.Contains("/default-"))
+            {
+                if (src != "art/shared/utilities/textures/default-color.tga")
+                {
+                    src = src.Replace("/default-", "-");
+                    Console.WriteLine(src);
+                }
+                else
+                {
+                    return;
+                }
+            }
             var filename = Path.GetFileName(src).Replace(".tga", ".png");
-            return Path.Join(SrcDirectory, "textures", filename);
+            map.Add(Path.Join(SrcDirectory, "textures", filename));
         }
 
         static void Main(string[] args)
@@ -242,8 +274,17 @@ namespace smdconv
                 src = Path.Join(SrcTextureLib, src);
                 string targetName = Path.GetDirectoryName(src);
                 string dst = targetName;
-                dst = Path.Join(SrcDirectory, "textures", Path.GetFileName(dst));
+                
+                // 这里分两种纹理 rock.png/3423.ndb - rock/default-color.png/3423.ndb
+                // 如果直接把directory拿出来解，就会产生一堆default-color，所以，遇到default-color的，把名字链接一下
+                if (dst.Contains("\\default-"))
+                {
+                    Console.WriteLine("spec texture: {0}", dst);
+                }
+                dst = dst.Replace("\\default-", "-");
                 dst = dst.Replace(".tga", ".png");
+
+                dst = Path.GetFileName(dst);
                 
                 if (!File.Exists(src))
                 {
@@ -253,8 +294,8 @@ namespace smdconv
                         
                     }
                 }
-                Console.WriteLine("{0} -> {1}", src, dst);
-                Texconv.Dds2Tga(src, dst);
+               
+                Texconv.Dds2Tga(src, Path.Join(SrcDirectory, "textures"), dst);
             }
 
             //return;
@@ -263,9 +304,7 @@ namespace smdconv
             String DstMaterialFile = Path.GetFileNameWithoutExtension(SrcMeshFileRoot) + ".smd.mat";
             DstMaterialFile = Path.Join(Path.GetDirectoryName(SrcMeshFileRoot), DstMaterialFile);
             Console.WriteLine("Converting {0} -> {1}", SrcMeshFileRoot, DstMaterialFile);
-            
-            List<string> KeyUniqueList = new List<string>();
-            
+
             var ShaderFileStream = File.OpenRead(SrcShaderFileRoot);
             var ShaderFileReader = new StreamReader(ShaderFileStream, Encoding.UTF8, true);
 
@@ -312,23 +351,19 @@ namespace smdconv
                                 // remap the textuew
                                 if (Regex.IsMatch(keyvalue[0], @"g_tNdFetchBaseColor.*Map", RegexOptions.IgnoreCase))
                                 {
-                                    colormap.Add(TransferTexturePath(keyvalue[1]));
+                                    TransferTexturePath(ref colormap, keyvalue[1]);
                                 }
                                 if (Regex.IsMatch(keyvalue[0], @"g_tNdFetchNormal.*Map", RegexOptions.IgnoreCase))
                                 {
-                                    normalmap.Add(TransferTexturePath(keyvalue[1]));
+                                    TransferTexturePath(ref normalmap, keyvalue[1]);
                                 }
                                 if (Regex.IsMatch(keyvalue[0], @"g_tNdFetchPack.*Map", RegexOptions.IgnoreCase))
                                 {
-                                    packmap.Add(TransferTexturePath(keyvalue[1]));
+                                    TransferTexturePath(ref packmap, keyvalue[1]);
                                 }
                                 if (Regex.IsMatch(keyvalue[0], @"g_tNdFetchTransparency.*Map", RegexOptions.IgnoreCase))
                                 {
-                                    transpmap.Add(TransferTexturePath(keyvalue[1]));
-                                }
-                                if (!KeyUniqueList.Contains(keyvalue[0]))
-                                {
-                                    KeyUniqueList.Add(TransferTexturePath(keyvalue[1]));
+                                    TransferTexturePath(ref transpmap, keyvalue[1]);
                                 }
 
                                 textureGroup += keyvalue[1];

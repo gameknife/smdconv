@@ -637,19 +637,30 @@ class SmdImporter(bpy.types.Operator, Logger):
 			imgpath = 'D:/uncharted4/zSource/test.png'
 			if len( self.levelMatLib[mat_name]["BaseColorTextures"] ) > 0:
 				imgpath = self.levelMatLib[mat_name]["BaseColorTextures"][0]
-			img = bpy.data.images.load(imgpath)
-			tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
-			tex_node.image = img
-			mat.node_tree.links.new(tex_node.outputs[0], principled_BSDF.inputs[0])
+				img = bpy.data.images.load(imgpath)
+				tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
+				tex_node.image = img
+				mat.node_tree.links.new(tex_node.outputs[0], principled_BSDF.inputs[0])
 
 			imgpath = 'D:/uncharted4/zSource/testnormal.png'
 			if len( self.levelMatLib[mat_name]["BaseNormalTextures"] ) > 0:
 				imgpath = self.levelMatLib[mat_name]["BaseNormalTextures"][0]
-			img = bpy.data.images.load(imgpath)
-			tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
-			tex_node.image = img
-			mat.node_tree.links.new(tex_node.outputs[0], principled_BSDF.inputs[19])
-			principled_BSDF.inputs[20].default_value = 0.0
+				img = bpy.data.images.load(imgpath)
+				tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
+				tex_node.image = img
+				normalmap_node = mat.node_tree.nodes.new('ShaderNodeNormalMap')
+				mat.node_tree.links.new(tex_node.outputs[0], normalmap_node.inputs[1])
+				mat.node_tree.links.new(normalmap_node.outputs[0], principled_BSDF.inputs[22])
+				
+			imgpath = 'D:/uncharted4/zSource/test.png'
+			if len( self.levelMatLib[mat_name]["BaseTranspTextures"] ) > 0:
+				imgpath = self.levelMatLib[mat_name]["BaseTranspTextures"][0]
+				img = bpy.data.images.load(imgpath)
+				tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
+				tex_node.image = img
+				mat.node_tree.links.new(tex_node.outputs[0], principled_BSDF.inputs[19])
+				mat.node_tree.links.new(tex_node.outputs[0], principled_BSDF.inputs[21])
+				principled_BSDF.inputs[20].default_value = 0.0
 
 			md.materials.append(mat)
 			# Give it a random colour
