@@ -182,7 +182,9 @@ namespace smdconv
     {
         private static String m_Title = "custom ascii mesh to smd tools";
         private static bool SkipInstance = true;
+        private static bool SkipLodSection = true;
         private static bool ExtractNode = true;
+        private static int MeshFileStartIdx = 3;
         private static String SrcDirectory = "";
 
         public static byte[] GetHash(string inputString)
@@ -214,7 +216,6 @@ namespace smdconv
                 if (src != "art/shared/utilities/textures/default-color.tga")
                 {
                     src = src.Replace("/default-", "-");
-                    Console.WriteLine(src);
                 }
                 else
                 {
@@ -252,9 +253,13 @@ namespace smdconv
             }
 
             // 输入命令行处理
+            MeshFileStartIdx = 3;
+            SkipLodSection = Boolean.Parse(args[0]);
+            String SrcTextureFileRoot = args[1];
+            String SrcShaderFileRoot = args[2]; 
+            String SrcMeshFileRoot = args[3];
             String[] SrcMeshFiles = args;
-            String SrcMeshFileRoot = args[2];
-            String SrcShaderFileRoot = args[1]; 
+            
             SrcDirectory = Path.GetDirectoryName(SrcShaderFileRoot);
             String SrcTextureLib = "D:\\uncharted4\\zSource\\t2";
             
@@ -265,7 +270,7 @@ namespace smdconv
             }
             
             // Tex Parse
-            String SrcTextureFileRoot = args[0];
+            
             var allTextures = File.ReadAllLines(SrcTextureFileRoot);
             for(int i = 3; i < allTextures.Length; ++i)
             {
@@ -277,10 +282,6 @@ namespace smdconv
                 
                 // 这里分两种纹理 rock.png/3423.ndb - rock/default-color.png/3423.ndb
                 // 如果直接把directory拿出来解，就会产生一堆default-color，所以，遇到default-color的，把名字链接一下
-                if (dst.Contains("\\default-"))
-                {
-                    Console.WriteLine("spec texture: {0}", dst);
-                }
                 dst = dst.Replace("\\default-", "-");
                 dst = dst.Replace(".tga", ".png");
 
@@ -426,7 +427,7 @@ namespace smdconv
 
             const Int32 BufferSize = 1024;
 
-            for (int file = 2; file < SrcMeshFiles.Length; ++file)
+            for (int file = MeshFileStartIdx; file < SrcMeshFiles.Length; ++file)
             {
                 var fileStream = File.OpenRead(SrcMeshFiles[file]);
                 var streamReader = new StreamReader(fileStream, Encoding.UTF8, true, BufferSize);
@@ -439,6 +440,10 @@ namespace smdconv
 
                 meshCount += SubMeshCount;
 
+                Vector3 LastCenter = Vector3.Zero;
+                string LastMaterialHash = "";
+                string LastToken = "";
+                
                 for (int i = 0; i < SubMeshCount; ++i)
                 {
                     line = streamReader.ReadLine();
@@ -547,12 +552,13 @@ namespace smdconv
                     // M = M2 * invM1
 
                     // tri1，先将他归还到原点
-                    float DotResult = 0;
-                    var Side1Length = CalcLocalPose(Vertice, out var worldMat, out DotResult);
+                    string PoseHash = "";
+                    var Side1Length = CalcLocalPose(Vertice, out var worldMat, out PoseHash);
                     
                     // 这个token不够用了，应该是有完全相同的独立instance，再加入一个差集角度
-                    string token = String.Format("{0}_{1}_{2}", VertexCount, TriCount, Math.Floor(DotResult * 100));
-                    
+                    // 有一些mesh，可能他的构造都是完全相同的，但是initial的scale不一样，所以有些地方会变得特别大。这种不太好处理
+                    string token = String.Format("{0}_{1}_{2}", VertexCount, TriCount, PoseHash);
+
                     Matrix4x4 worldMatInv;
                     Matrix4x4.Invert(worldMat, out worldMatInv);
 
@@ -561,10 +567,53 @@ namespace smdconv
                     var scaleT = new Vector3();
 
                     Matrix4x4.Decompose(worldMat, out scaleT, out rotation, out translation);
-                    // Console.WriteLine("Translation: {0}",translation);
-                    // Console.WriteLine("Rotation: {0}", rotation.ToEulerAngles());
-                    // Console.WriteLine("Scale: {0}", scale);
 
+                    if (SkipLodSection)
+                    {
+                        // LOD判断：每一个LOD级，都是以LOD0-LOD1-LOD2...LODN排列的，特征是，面数逐级递减，bbox中心差距不大，材质相同
+                        // 快速判断，连续材质相同并且tri面递减，切bbox接近
+                        // 这里发现一些特例，home里的一个楼梯，扶手和栏杆是分开的，材质一样，bbox几乎一致，要区分他是不是lodsection，可能只能靠voxel对比了，LOD section体素数据应该是接近的
+
+                        // 计算AABB
+                        Vector3 Max = new Vector3(-9999999);
+                        Vector3 Min = new Vector3(9999999);
+                        for (int v = 0; v < Vertice.Length; ++v)
+                        {
+                            Max = Vector3.Max(Max, Vertice[v]);
+                            Min = Vector3.Min(Min, Vertice[v]);
+                        }
+
+                        Vector3 Center = Vector3.Lerp(Min, Max, 0.5f);
+
+                        // LastMaterial, LastCenter, LastToken, Judgement
+                        bool isLODSection = false;
+                        if (LastMaterialHash == hash)
+                        {
+                            if (Vector3.Distance(Center, LastCenter) < 0.8f)
+                            {
+                                Console.WriteLine("found lod section: {0} - {1}", Center, LastCenter);
+                                isLODSection = true;
+                            }
+                        }
+
+                        if (!isLODSection)
+                        {
+                            LastMaterialHash = hash;
+                            LastCenter = Center;
+                        }
+
+                        if (isLODSection)
+                        {
+                            for (int t = 0; t < TriCount; ++t)
+                            {
+                                line = streamReader.ReadLine();
+                            }
+
+                            continue;
+                        }
+                    }
+
+                    // 先直接跳过lod
                     if (SkipInstance)
                     {
                         if (existToken.ContainsKey(token))
@@ -702,8 +751,9 @@ namespace smdconv
             Console.WriteLine("[Mesh Statistic] Tri: {0}, Total Submesh: {1}, Individual: {2} Material: {3}", statistic.triCount, meshCount, instanceLocationList.Count, materialCount);
         }
 
-        private static float CalcLocalPose(Vector3[] Vertice, out Matrix4x4 worldMat, out float DotResult)
+        private static float CalcLocalPose(Vector3[] Vertice, out Matrix4x4 worldMat, out string PoseHash)
         {
+            // v1 - v4m 夹角于比值
             var ref1_1 = Vertice[0];
             var ref1_2 = Vertice[1];
             var ref1_3 = Vertice[2];
@@ -711,7 +761,7 @@ namespace smdconv
             var side1 = Vector3.Normalize(ref1_2 - ref1_1);
             var side2 = Vector3.Normalize(ref1_3 - ref1_1);
 
-            DotResult = Vector3.Dot(side1, side2);
+            float DotResult = Vector3.Dot(side1, side2);
 
             if (DotResult > 0.99f)
             {
@@ -733,7 +783,17 @@ namespace smdconv
                     DotResult = Vector3.Dot(side1, side2);
                     if (DotResult > 0.99f)
                     {
-                        Console.WriteLine("may loss angle: {0} - {1}", Vertice.Length, DotResult);
+                        ref1_1 = Vertice[0];
+                        ref1_2 = Vertice[2];
+                        ref1_3 = Vertice[3];
+            
+                        side1 = Vector3.Normalize(ref1_2 - ref1_1);
+                        side2 = Vector3.Normalize(ref1_3 - ref1_1);
+                        DotResult = Vector3.Dot(side1, side2);
+                        if (DotResult > 0.99f)
+                        {
+                            Console.WriteLine("may loss angle: {0} - {1}", Vertice.Length, DotResult);
+                        }
                     }
                 }
             }
@@ -744,6 +804,14 @@ namespace smdconv
             front = Vector3.Normalize(front);
 
             worldMat = Matrix4x4.CreateWorld(ref1_1, front, up);
+
+            float Lside0 = Vector3.DistanceSquared(Vertice[0], Vertice[1]);
+            float Lside1 = Vector3.DistanceSquared(Vertice[0], Vertice[2]);
+            float Lside2 = Vector3.DistanceSquared(Vertice[0], Vertice[3]);
+            float Lside3 = Vertice.Length > 4 ? Vector3.DistanceSquared(Vertice[0], Vertice[4]) : Lside0;
+
+            PoseHash = String.Format("{0}_{1}_{2}_{3}", Math.Floor(DotResult*100.0f), Math.Floor( Lside1 / Lside0 * 100.0f), Math.Floor( Lside2 / Lside0 * 100.0f), Math.Floor( Lside3 / Lside0 * 100.0f));
+            
             return (ref1_2 - ref1_1).Length();;
         }
     }
