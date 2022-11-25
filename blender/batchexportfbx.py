@@ -132,6 +132,8 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
             scale = item.scale.copy()
             rot_quat = item.rotation_quaternion.copy()
             root_name = item.users_collection[0].name
+            filename = bpy.path.basename(bpy.context.blend_data.filepath)
+            filename = os.path.splitext(filename)[0]
 
             item.location = Vector([0,0,0])
             item.rotation_quaternion = Vector([1,0,0,0])
@@ -184,10 +186,10 @@ class Batch_FBX_Export(bpy.types.Operator, ExportHelper):
                         ) 
             
             levelfile.write("      Begin Actor Class=/Script/Engine.StaticMeshActor Name=StaticMeshActor_{} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'\n".format(counter))
-            levelfile.write("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'\n")
+            levelfile.write("         Begin Object Class=/Script/Engine.StaticMeshComponent Name=\"StaticMeshComponent0\" Archetype=/Script/Engine.StaticMeshComponent'/Script/Engine.Default__StaticMeshActor:StaticMeshComponent0'\n")
             levelfile.write("         End Object\n")
             levelfile.write("         Begin Object Name=\"StaticMeshComponent0\"\n")
-            levelfile.write("            StaticMesh=StaticMesh'\"/Game/Art/Level/{}/{}.{}\"'\n".format(root_name, fbx_name, fbx_name))
+            levelfile.write("            StaticMesh=/Script/Engine.StaticMesh'\"/Game/Art/Level/{}/{}.{}\"'\n".format(filename, fbx_name, fbx_name))
             levelfile.write("            StaticMeshImportVersion=1\n")
             levelfile.write("            RelativeLocation=(X={},Y={},Z={})\n".format(-location[0]*100,location[1]*100,location[2]*100))
             levelfile.write("            RelativeRotation=(Pitch={},Yaw={},Roll={})\n".format(-euler[1]*57.29578,180 - euler[2]*57.29578,euler[0]*57.29578))

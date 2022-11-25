@@ -807,11 +807,21 @@ namespace smdconv
 
             float Lside0 = Vector3.DistanceSquared(Vertice[0], Vertice[1]);
             float Lside1 = Vector3.DistanceSquared(Vertice[0], Vertice[2]);
-            float Lside2 = Vector3.DistanceSquared(Vertice[0], Vertice[3]);
+            float Lside2 = Vertice.Length > 3 ? Vector3.DistanceSquared(Vertice[0], Vertice[3]) : Lside0;
             float Lside3 = Vertice.Length > 4 ? Vector3.DistanceSquared(Vertice[0], Vertice[4]) : Lside0;
-
-            PoseHash = String.Format("{0}_{1}_{2}_{3}", Math.Floor(DotResult*100.0f), Math.Floor( Lside1 / Lside0 * 100.0f), Math.Floor( Lside2 / Lside0 * 100.0f), Math.Floor( Lside3 / Lside0 * 100.0f));
             
+            // 这里解决的问题其实是home里的那种照片，对于大规模mesh，能够重样的几率太小了，跳过
+            if (Vertice.Length > 300)
+            {
+                PoseHash = "1";
+            }
+            else
+            {
+                PoseHash = String.Format("{0}_{1}_{2}_{3}", Math.Floor(DotResult * 100.0f),
+                    Math.Floor(Lside1 / Lside0 * 100.0f), Math.Floor(Lside2 / Lside0 * 100.0f),
+                    Math.Floor(Lside3 / Lside0 * 100.0f));
+            }
+
             return (ref1_2 - ref1_1).Length();;
         }
     }
